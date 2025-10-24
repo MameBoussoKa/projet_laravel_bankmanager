@@ -19,11 +19,11 @@ use L5Swagger\L5SwaggerServiceProvider;
 |
 */
 
-Route::middleware('auth:api')->get('/user', function (Request $request) {
+Route::get('/user', function (Request $request) {
     return $request->user();
 });
 
-Route::prefix('v1')->middleware(['auth:api', 'api.rate.limit', 'api.user.rate.limit', 'api.response.format'])->group(function () {
+Route::prefix('v1')->middleware(['api.rate.limit', 'api.user.rate.limit', 'api.response.format'])->group(function () {
     Route::apiResource('clients', ClientController::class);
     Route::apiResource('comptes', CompteController::class);
     Route::apiResource('transactions', TransactionController::class);
