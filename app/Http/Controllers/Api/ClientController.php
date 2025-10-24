@@ -14,8 +14,8 @@ use Illuminate\Http\Request;
  * )
  *
  * @OA\Server(
- *     url="http://localhost:8000/api",
- *     description="Local development server"
+ *     url="http://api.banque.example.com/api/v1",
+ *     description="Production API server"
  * )
  */
 class ClientController extends Controller

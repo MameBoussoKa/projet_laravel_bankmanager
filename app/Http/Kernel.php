@@ -64,5 +64,8 @@ class Kernel extends HttpKernel
         'signed' => \App\Http\Middleware\ValidateSignature::class,
         'throttle' => \Illuminate\Routing\Middleware\ThrottleRequests::class,
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
+        'api.rate.limit' => \App\Http\Middleware\ApiRateLimit::class,
+        'api.user.rate.limit' => \App\Http\Middleware\ApiUserRateLimit::class,
+        'api.response.format' => \App\Http\Middleware\ApiResponseFormat::class,
     ];
 }

@@ -5,20 +5,20 @@ return [
     'documentations' => [
         'default' => [
             'api' => [
-                'title' => 'L5 Swagger UI',
+                'title' => 'Bank Manager API',
             ],
 
             'routes' => [
                 /*
                  * Route for accessing api documentation interface
                  */
-                'api' => 'api/documentation',
+                'api' => 'api/v1/docs',
             ],
             'paths' => [
                 /*
                  * Edit to include full URL in ui for assets
                  */
-                'use_absolute_path' => env('L5_SWAGGER_USE_ABSOLUTE_PATH', true),
+                'use_absolute_path' => env('L5_SWAGGER_USE_ABSOLUTE_PATH', false),
 
                 /*
                 * Edit to set path where swagger ui assets should be stored
@@ -54,12 +54,12 @@ return [
             /*
              * Route for accessing parsed swagger annotations.
              */
-            'docs' => 'docs',
+            'docs' => 'api/v1/docs',
 
             /*
              * Route for Oauth2 authentication callback.
              */
-            'oauth2_callback' => 'api/oauth2-callback',
+            'oauth2_callback' => 'api/v1/oauth2-callback',
 
             /*
              * Middleware allows to prevent unexpected access to API documentation
@@ -91,7 +91,7 @@ return [
             /*
              * Edit to set the api's base path
              */
-            'base' => env('L5_SWAGGER_BASE_PATH', null),
+            'base' => env('L5_SWAGGER_BASE_PATH', 'http://api.banque.example.com/api/v1'),
 
             /*
              * Absolute path to directories that should be excluded from scanning
