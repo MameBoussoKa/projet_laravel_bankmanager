@@ -102,23 +102,23 @@ return [
         ],
 
         'scanOptions' => [
-            /**
-             * Configuration for default processors. Allows to pass processors configuration to swagger-php.
-             *
-             * @link https://zircote.github.io/swagger-php/reference/processors.html
-             */
-            'default_processors_configuration' => [
-            /** Example */
-            /**
-             * 'operationId.hash' => true,
-             * 'pathFilter' => [
-             * 'tags' => [
-             * '/pets/',
-             * '/store/',
-             * ],
-             * ],.
-             */
-            ],
+        /**
+         * Configuration for default processors. Allows to pass processors configuration to swagger-php.
+         *
+         * @link https://zircote.github.io/swagger-php/reference/processors.html
+         */
+        'default_processors_configuration' => [
+        /** Example */
+        /**
+         * 'operationId.hash' => true,
+         * 'pathFilter' => [
+         * 'tags' => [
+         * '/pets/',
+         * '/store/',
+         * ],
+         * ],.
+         */
+        ],
 
             /**
              * analyser: defaults to \OpenApi\StaticAnalyser .
@@ -156,7 +156,11 @@ return [
              * @note This option overwrites `paths.excludes`
              * @see \OpenApi\scan
              */
-            'exclude' => [],
+            'exclude' => [
+                app_path('Http/Controllers/Api/ClientController.php'),
+                app_path('Http/Controllers/Api/TransactionController.php'),
+                app_path('Http/Controllers/Api/AdminController.php'),
+            ],
 
             /*
              * Allows to generate specs either for OpenAPI 3.0.0 or OpenAPI 3.1.0.

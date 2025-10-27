@@ -19,7 +19,7 @@ class Compte extends Model
         static::addGlobalScope(new ActiveScope);
     }
 
-    protected $fillable = ['numero_compte', 'type', 'solde', 'statut', 'client_id', 'devise', 'motifBlocage', 'metadata', 'dateFermeture'];
+    protected $fillable = ['numero_compte', 'type', 'statut', 'client_id', 'devise', 'motifBlocage', 'metadata', 'dateFermeture'];
 
     protected $casts = [
         'solde' => 'decimal:2',
@@ -43,6 +43,16 @@ class Compte extends Model
     public function getTitulaireAttribute()
     {
         return $this->client ? $this->client->nom . ' ' . $this->client->prenom : null;
+    }
+
+    /**
+     * Get calculated balance from transactions
+     */
+    public function getSoldeAttribute()
+    {
+        $deposits = $this->transactions()->where('type', 'depot')->sum('montant');
+        $withdrawals = $this->transactions()->where('type', 'retrait')->sum('montant');
+        return $deposits - $withdrawals;
     }
 
     /**

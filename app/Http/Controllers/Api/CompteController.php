@@ -13,8 +13,26 @@ use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
+/**
+ * @OA\Info(
+ *     title="Bank Manager API",
+ *     version="1.0.0",
+ *     description="API for managing bank accounts"
+ * )
+ *
+ * @OA\Server(
+ *     url="http://api.banque.example.com/api/v1",
+ *     description="Production API server"
+ * )
+ *
+ * @OA\Tag(
+ *     name="Comptes",
+ *     description="API Endpoints for account management"
+ * )
+ */
 class CompteController extends Controller
 {
     use ApiResponseTrait;
@@ -208,6 +226,71 @@ class CompteController extends Controller
         return $this->successResponse(new CompteCollection($comptes));
     }
 
+    /**
+     * @OA\Post(
+     *     path="/v1/comptes",
+     *     summary="Créer un nouveau compte",
+     *     description="Crée un nouveau compte bancaire. Si le client n'existe pas, il sera créé automatiquement avec génération de mot de passe et code.",
+     *     operationId="createCompte",
+     *     tags={"Comptes"},
+     *     security={{"sanctum":{}}},
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"type","soldeInitial","devise","client"},
+     *             @OA\Property(property="type", type="string", enum={"courant", "epargne"}, example="courant"),
+     *             @OA\Property(property="soldeInitial", type="number", format="float", minimum=10000, example=50000),
+     *             @OA\Property(property="devise", type="string", maxLength=10, example="FCFA"),
+     *             @OA\Property(
+     *                 property="client",
+     *                 type="object",
+     *                 @OA\Property(property="id", type="integer", nullable=true, example=null),
+     *                 @OA\Property(property="titulaire", type="string", nullable=true, example="Amadou Diallo"),
+     *                 @OA\Property(property="email", type="string", format="email", nullable=true, example="amadou.diallo@example.com"),
+     *                 @OA\Property(property="telephone", type="string", nullable=true, example="+221771234568"),
+     *                 @OA\Property(property="adresse", type="string", nullable=true, example="Dakar, Sénégal")
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=201,
+     *         description="Compte créé avec succès",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="message", type="string", example="Compte créé avec succès"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="id", type="string", format="uuid", example="550e8400-e29b-41d4-a716-446655440000"),
+     *                 @OA\Property(property="numeroCompte", type="string", example="C00123456"),
+     *                 @OA\Property(property="titulaire", type="string", example="Amadou Diallo"),
+     *                 @OA\Property(property="type", type="string", example="courant"),
+     *                 @OA\Property(property="solde", type="number", format="float", example=50000),
+     *                 @OA\Property(property="devise", type="string", example="FCFA"),
+     *                 @OA\Property(property="dateCreation", type="string", format="date-time"),
+     *                 @OA\Property(property="statut", type="string", example="actif")
+     *             ),
+     *             @OA\Property(property="timestamp", type="string", format="date-time"),
+     *             @OA\Property(property="path", type="string"),
+     *             @OA\Property(property="traceId", type="string")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=400,
+     *         description="Données invalides",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Non autorisé",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=429,
+     *         description="Trop de requêtes",
+     *         @OA\JsonContent(type="object")
+     *     )
+     * )
+     */
     public function store(Request $request)
     {
         // Custom validation logic for conditional client fields
@@ -238,7 +321,7 @@ class CompteController extends Controller
             $clientValidator = validator($data['client'], [
                 'titulaire' => 'required|string|max:255',
                 'email' => 'required|string|email|unique:clients,email',
-                'telephone' => 'required|string|regex:/^\+221[76-8][0-9]{7}$/|unique:clients,telephone',
+                'telephone' => 'required|string|regex:/^\+221[0-9]{9}$/|unique:clients,telephone',
                 'adresse' => 'required|string|max:500',
             ]);
 
@@ -276,7 +359,6 @@ class CompteController extends Controller
         $compteData = [
             'numero_compte' => $numeroCompte,
             'type' => $data['type'],
-            'solde' => $data['soldeInitial'],
             'statut' => 'actif',
             'client_id' => $client->id,
             'devise' => $data['devise'],
@@ -670,8 +752,7 @@ class CompteController extends Controller
      */
     private function sendAuthenticationEmail(Client $client, string $password): void
     {
-        // TODO: Implement email sending
-        // Mail::to($client->email)->send(new ClientAuthenticationMail($client, $password));
+        Mail::to($client->email)->send(new \App\Mail\ClientAuthenticationMail($client, $password));
     }
 
     /**
@@ -679,8 +760,8 @@ class CompteController extends Controller
      */
     private function sendSMSCode(Client $client, string $code): void
     {
-        // TODO: Implement SMS sending
-        // $this->smsService->send($client->telephone, "Votre code d'authentification: $code");
+        // For now, we'll log the SMS content. In production, integrate with an SMS service
+        Log::info("SMS envoyé à {$client->telephone}: Votre code d'authentification: {$code}");
     }
 
     /**
