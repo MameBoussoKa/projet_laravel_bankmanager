@@ -23,9 +23,9 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 });
 
-Route::prefix('v1')->middleware(['api.rate.limit', 'api.user.rate.limit', 'api.response.format'])->group(function () {
+Route::prefix('v1')->middleware(['api.rate.limit', 'api.user.rate.limit', 'api.response.format', 'rating'])->group(function () {
     Route::apiResource('clients', ClientController::class);
-    Route::apiResource('comptes', CompteController::class);
+    Route::apiResource('comptes', CompteController::class)->middleware(['logging']);
     Route::apiResource('transactions', TransactionController::class);
     Route::apiResource('admins', AdminController::class);
 });

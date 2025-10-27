@@ -67,5 +67,7 @@ class Kernel extends HttpKernel
         'api.rate.limit' => \App\Http\Middleware\ApiRateLimit::class,
         'api.user.rate.limit' => \App\Http\Middleware\ApiUserRateLimit::class,
         'api.response.format' => \App\Http\Middleware\ApiResponseFormat::class,
+        'rating' => \App\Http\Middleware\RatingMiddleware::class,
+        'logging' => \App\Http\Middleware\LoggingMiddleware::class,
     ];
 }

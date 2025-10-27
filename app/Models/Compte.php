@@ -4,15 +4,27 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\SoftDeletes;
+use App\Models\Scopes\ActiveScope;
 
 class Compte extends Model
 {
-    use HasFactory;
-    protected $fillable = ['numero_compte', 'type', 'solde', 'statut', 'client_id', 'devise', 'motifBlocage', 'metadata'];
+    use HasFactory, SoftDeletes;
+
+    /**
+     * The "booted" method of the model.
+     */
+    protected static function booted(): void
+    {
+        static::addGlobalScope(new ActiveScope);
+    }
+
+    protected $fillable = ['numero_compte', 'type', 'solde', 'statut', 'client_id', 'devise', 'motifBlocage', 'metadata', 'dateFermeture'];
 
     protected $casts = [
         'solde' => 'decimal:2',
         'metadata' => 'array',
+        'dateFermeture' => 'datetime',
     ];
 
     public function client()
@@ -47,5 +59,23 @@ class Compte extends Model
     public function getDerniereModificationAttribute()
     {
         return $this->updated_at->toISOString();
+    }
+
+    /**
+     * Scope for filtering by account number
+     */
+    public function scopeNumero($query, $numero)
+    {
+        return $query->where('numero_compte', 'like', "%{$numero}%");
+    }
+
+    /**
+     * Scope for filtering by client telephone
+     */
+    public function scopeClient($query, $telephone)
+    {
+        return $query->whereHas('client', function ($clientQuery) use ($telephone) {
+            $clientQuery->where('telephone', $telephone);
+        });
     }
 }

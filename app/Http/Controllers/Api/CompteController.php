@@ -3,9 +3,13 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use App\Http\Resources\CompteResource;
+use App\Http\Resources\CompteCollection;
 use App\Models\Compte;
 use App\Models\Client;
 use App\Models\Admin;
+use App\Services\CloudStorageService;
+use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
@@ -13,13 +17,98 @@ use Illuminate\Support\Str;
 
 class CompteController extends Controller
 {
+    use ApiResponseTrait;
+
+    /**
+     * @OA\Get(
+     *     path="/v1/comptes",
+     *     summary="Lister tous les comptes",
+     *     description="Récupère la liste de tous les comptes avec possibilité de filtrage et pagination",
+     *     operationId="getComptes",
+     *     tags={"Comptes"},
+     *     security={{"sanctum":{}}},
+     *     @OA\Parameter(
+     *         name="page",
+     *         in="query",
+     *         description="Numéro de page",
+     *         required=false,
+     *         @OA\Schema(type="integer", default=1)
+     *     ),
+     *     @OA\Parameter(
+     *         name="limit",
+     *         in="query",
+     *         description="Nombre d'éléments par page",
+     *         required=false,
+     *         @OA\Schema(type="integer", default=10, maximum=100)
+     *     ),
+     *     @OA\Parameter(
+     *         name="type",
+     *         in="query",
+     *         description="Filtrer par type de compte",
+     *         required=false,
+     *         @OA\Schema(type="string", enum={"courant", "epargne"})
+     *     ),
+     *     @OA\Parameter(
+     *         name="statut",
+     *         in="query",
+     *         description="Filtrer par statut",
+     *         required=false,
+     *         @OA\Schema(type="string", enum={"actif", "bloque", "ferme"})
+     *     ),
+     *     @OA\Parameter(
+     *         name="search",
+     *         in="query",
+     *         description="Recherche par titulaire ou numéro de compte",
+     *         required=false,
+     *         @OA\Schema(type="string")
+     *     ),
+     *     @OA\Parameter(
+     *         name="sort",
+     *         in="query",
+     *         description="Champ de tri",
+     *         required=false,
+     *         @OA\Schema(type="string", enum={"dateCreation", "solde", "titulaire"})
+     *     ),
+     *     @OA\Parameter(
+     *         name="order",
+     *         in="query",
+     *         description="Ordre de tri",
+     *         required=false,
+     *         @OA\Schema(type="string", enum={"asc", "desc"}, default="desc")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Liste des comptes récupérée avec succès",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="data", type="array", @OA\Items(type="object")),
+     *             @OA\Property(property="pagination", type="object"),
+     *             @OA\Property(property="links", type="object"),
+     *             @OA\Property(property="timestamp", type="string", format="date-time"),
+     *             @OA\Property(property="path", type="string"),
+     *             @OA\Property(property="traceId", type="string")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Non autorisé",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=429,
+     *         description="Trop de requêtes",
+     *         @OA\JsonContent(type="object")
+     *     )
+     * )
+     */
     public function index(Request $request)
     {
         $user = Auth::user();
 
         // Determine if user is admin or client
-        $isAdmin = Admin::where('email', $user->email)->exists();
-        $isClient = Client::where('email', $user->email)->exists();
+        $isAdmin = $user ? Admin::where('email', $user->email)->exists() : false;
+        $isClient = $user ? Client::where('email', $user->email)->exists() : false;
 
         $query = Compte::with('client');
 
@@ -78,55 +167,45 @@ class CompteController extends Controller
             $query->orderBy('created_at', 'desc');
         }
 
+        // Handle archived accounts for savings type
+        if ($request->has('include_archived') && $request->include_archived && $request->type === 'epargne') {
+            $perPage = min($request->get('limit', 10), 100);
+            $cloudService = new CloudStorageService();
+            $archivedAccounts = $cloudService->getArchivedSavingsAccounts([
+                'page' => $request->get('page', 1),
+                'limit' => $perPage,
+                'search' => $request->search,
+            ]);
+
+            // Merge local and archived accounts
+            $localComptes = $query->paginate($perPage);
+            $allAccounts = array_merge($localComptes->items(), $archivedAccounts['data'] ?? []);
+
+            // Create custom response for mixed data
+            return $this->successResponse([
+                'data' => $allAccounts,
+                'pagination' => [
+                    'currentPage' => $request->get('page', 1),
+                    'totalPages' => max($localComptes->lastPage(), $archivedAccounts['pagination']['totalPages'] ?? 1),
+                    'totalItems' => $localComptes->total() + ($archivedAccounts['pagination']['totalItems'] ?? 0),
+                    'itemsPerPage' => $perPage,
+                    'hasNext' => ($request->get('page', 1) * $perPage) < ($localComptes->total() + ($archivedAccounts['pagination']['totalItems'] ?? 0)),
+                    'hasPrevious' => $request->get('page', 1) > 1,
+                ],
+                'links' => [
+                    'self' => $request->url() . '?' . $request->getQueryString(),
+                    'next' => $request->url() . '?' . http_build_query(array_merge($request->query(), ['page' => $request->get('page', 1) + 1])),
+                    'first' => $request->url() . '?' . http_build_query(array_merge($request->query(), ['page' => 1])),
+                ],
+            ]);
+        }
+
         // Pagination
         $perPage = min($request->get('limit', 10), 100);
         $comptes = $query->paginate($perPage);
 
-        // Format response according to specifications
-        $formattedData = $comptes->items();
-        $formattedData = collect($formattedData)->map(function ($compte) {
-            return [
-                'id' => $compte->id,
-                'numeroCompte' => $compte->numero_compte,
-                'titulaire' => $compte->titulaire,
-                'type' => $compte->type,
-                'solde' => $compte->solde,
-                'devise' => $compte->devise ?? 'FCFA',
-                'dateCreation' => $compte->date_creation,
-                'statut' => $compte->statut,
-                'motifBlocage' => $compte->motifBlocage,
-                'metadata' => [
-                    'derniereModification' => $compte->derniere_modification,
-                    'version' => $compte->metadata['version'] ?? 1,
-                ],
-            ];
-        });
-
-        $response = [
-            'success' => true,
-            'data' => $formattedData,
-            'pagination' => [
-                'currentPage' => $comptes->currentPage(),
-                'totalPages' => $comptes->lastPage(),
-                'totalItems' => $comptes->total(),
-                'itemsPerPage' => $comptes->perPage(),
-                'hasNext' => $comptes->hasMorePages(),
-                'hasPrevious' => $comptes->currentPage() > 1,
-            ],
-            'links' => [
-                'self' => $request->url() . '?' . $request->getQueryString(),
-                'next' => $comptes->nextPageUrl(),
-                'first' => $request->url() . '?' . http_build_query(array_merge($request->query(), ['page' => 1])),
-                'last' => $request->url() . '?' . http_build_query(array_merge($request->query(), ['page' => $comptes->lastPage()])),
-            ],
-        ];
-
-        // Remove null links
-        if (!$comptes->hasMorePages()) {
-            unset($response['links']['next']);
-        }
-
-        return response()->json($response, 200);
+        // Format response using Resource Collection
+        return $this->successResponse(new CompteCollection($comptes));
     }
 
     public function store(Request $request)
@@ -152,19 +231,7 @@ class CompteController extends Controller
             // Using existing client - validate that client exists
             $client = Client::find($clientId);
             if (!$client) {
-                return response()->json([
-                    'success' => false,
-                    'error' => [
-                        'code' => 'VALIDATION_ERROR',
-                        'message' => 'Les données fournies sont invalides',
-                        'details' => [
-                            'client.id' => 'Le client spécifié n\'existe pas'
-                        ],
-                        'timestamp' => now()->toISOString(),
-                        'path' => request()->path(),
-                        'traceId' => uniqid()
-                    ]
-                ], 400);
+                return $this->errorResponse('VALIDATION_ERROR', 'Les données fournies sont invalides', ['client.id' => 'Le client spécifié n\'existe pas'], 400);
             }
         } else {
             // Creating new client - validate all required fields
@@ -217,92 +284,353 @@ class CompteController extends Controller
 
         $compte = Compte::create($compteData);
 
-        // Format response according to specifications
-        $formattedData = [
-            'id' => $compte->id,
-            'numeroCompte' => $compte->numero_compte,
-            'titulaire' => $compte->titulaire,
-            'type' => $compte->type,
-            'solde' => $compte->solde,
-            'devise' => $compte->devise,
-            'dateCreation' => $compte->date_creation,
-            'statut' => $compte->statut,
-            'metadata' => [
-                'derniereModification' => $compte->derniere_modification,
-                'version' => $compte->metadata['version'] ?? 1,
-            ],
-        ];
-
-        return response()->json($formattedData, 201);
+        // Format response using Resource
+        return $this->successResponse(new CompteResource($compte), 'Compte créé avec succès', 201);
     }
 
-    public function show(Compte $compte)
+    /**
+     * @OA\Get(
+     *     path="/v1/comptes/{compteId}",
+     *     summary="Récupérer un compte spécifique",
+     *     description="Récupère les détails d'un compte spécifique par son ID. Recherche d'abord en local, puis dans le cloud si nécessaire.",
+     *     operationId="getCompte",
+     *     tags={"Comptes"},
+     *     security={{"sanctum":{}}},
+     *     @OA\Parameter(
+     *         name="compteId",
+     *         in="path",
+     *         description="ID du compte à récupérer",
+     *         required=true,
+     *         @OA\Schema(type="string", format="uuid")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Détails du compte récupérés avec succès",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="data", type="object"),
+     *             @OA\Property(property="timestamp", type="string", format="date-time"),
+     *             @OA\Property(property="path", type="string"),
+     *             @OA\Property(property="traceId", type="string")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="Accès refusé - Le compte n'appartient pas au client",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Compte non trouvé",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="boolean", example=false),
+     *             @OA\Property(property="error", type="object",
+     *                 @OA\Property(property="code", type="string", example="COMPTE_NOT_FOUND"),
+     *                 @OA\Property(property="message", type="string", example="Le compte avec l'ID spécifié n'existe pas"),
+     *                 @OA\Property(property="details", type="object",
+     *                     @OA\Property(property="compteId", type="string", format="uuid")
+     *                 )
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Non autorisé",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=429,
+     *         description="Trop de requêtes",
+     *         @OA\JsonContent(type="object")
+     *     )
+     * )
+     */
+    public function show($compteId)
     {
         $user = Auth::user();
 
         // Determine if user is admin or client
-        $isAdmin = Admin::where('email', $user->email)->exists();
-        $isClient = Client::where('email', $user->email)->exists();
+        $isAdmin = $user ? Admin::where('email', $user->email)->exists() : false;
+        $isClient = $user ? Client::where('email', $user->email)->exists() : false;
 
-        // If user is client, check if the account belongs to them
-        if ($isClient) {
-            $client = Client::where('email', $user->email)->first();
-            if (!$client || $compte->client_id !== $client->id) {
-                return response()->json([
-                    'success' => false,
-                    'error' => [
-                        'code' => 'FORBIDDEN',
-                        'message' => 'Vous n\'avez pas accès à ce compte',
-                        'details' => [
-                            'compteId' => $compte->id
-                        ],
-                        'timestamp' => now()->toISOString(),
-                        'path' => request()->path(),
-                        'traceId' => uniqid()
-                    ]
-                ], 403);
+        // Try to find account locally first
+        $compte = Compte::with('client')->find($compteId);
+
+        if ($compte) {
+            // Check if account is active (for checking/cheque accounts) or savings
+            $isLocalSearch = ($compte->type === 'courant' || ($compte->type === 'epargne' && $compte->statut === 'actif'));
+
+            if ($isLocalSearch) {
+                // If user is client, check if the account belongs to them
+                if ($isClient) {
+                    $client = Client::where('email', $user->email)->first();
+                    if (!$client || $compte->client_id !== $client->id) {
+                        return $this->errorResponse('FORBIDDEN', 'Vous n\'avez pas accès à ce compte', ['compteId' => $compte->id], 403);
+                    }
+                }
+                // Admin can access any account
+
+                // Format response using Resource
+                return $this->successResponse(new CompteResource($compte));
             }
         }
-        // Admin can access any account
 
-        // Format response according to specifications
-        $formattedData = [
-            'id' => $compte->id,
-            'numeroCompte' => $compte->numero_compte,
-            'titulaire' => $compte->titulaire,
-            'type' => $compte->type,
-            'solde' => $compte->solde,
-            'devise' => $compte->devise ?? 'FCFA',
-            'dateCreation' => $compte->date_creation,
-            'statut' => $compte->statut,
-            'motifBlocage' => $compte->motifBlocage,
-            'metadata' => [
-                'derniereModification' => $compte->derniere_modification,
-                'version' => $compte->metadata['version'] ?? 1,
-            ],
-        ];
+        // If not found locally or needs cloud search, try cloud storage
+        $cloudService = new CloudStorageService();
+        $archivedAccount = $cloudService->getArchivedAccount($compteId);
 
-        return response()->json($formattedData, 200);
+        if ($archivedAccount) {
+            // If user is client, check if the account belongs to them
+            if ($isClient) {
+                $client = Client::where('email', $user->email)->first();
+                if (!$client || $archivedAccount['client_id'] !== $client->id) {
+                    return $this->errorResponse('FORBIDDEN', 'Vous n\'avez pas accès à ce compte', ['compteId' => $compteId], 403);
+                }
+            }
+            // Admin can access any account
+
+            // Format archived account data to match CompteResource format
+            $formattedAccount = [
+                'id' => $archivedAccount['id'],
+                'numeroCompte' => $archivedAccount['numero_compte'],
+                'titulaire' => $archivedAccount['titulaire'],
+                'type' => $archivedAccount['type'],
+                'solde' => $archivedAccount['solde'],
+                'devise' => $archivedAccount['devise'] ?? 'FCFA',
+                'dateCreation' => $archivedAccount['date_creation'],
+                'statut' => $archivedAccount['statut'] ?? 'archive',
+                'motifBlocage' => $archivedAccount['motifBlocage'] ?? null,
+                'metadata' => $archivedAccount['metadata'] ?? ['version' => 1],
+            ];
+
+            return $this->successResponse($formattedAccount);
+        }
+
+        // Account not found in local or cloud
+        return $this->errorResponse('COMPTE_NOT_FOUND', 'Le compte avec l\'ID spécifié n\'existe pas', ['compteId' => $compteId], 404);
     }
 
-    public function update(Request $request, Compte $compte)
+    /**
+     * @OA\Patch(
+     *     path="/v1/comptes/{compteId}",
+     *     summary="Mettre à jour les informations du client",
+     *     description="Met à jour les informations du client associé à un compte. Tous les champs sont optionnels mais au moins un champ doit être fourni.",
+     *     operationId="updateClientInfo",
+     *     tags={"Comptes"},
+     *     security={{"sanctum":{}}},
+     *     @OA\Parameter(
+     *         name="compteId",
+     *         in="path",
+     *         description="ID du compte",
+     *         required=true,
+     *         @OA\Schema(type="string", format="uuid")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="titulaire", type="string", example="Amadou Diallo Junior"),
+     *             @OA\Property(property="informationsClient", type="object",
+     *                 @OA\Property(property="telephone", type="string", example="+221771234568"),
+     *                 @OA\Property(property="email", type="string", format="email", example="amadou.diallo@example.com"),
+     *                 @OA\Property(property="password", type="string", example="newpassword123"),
+     *                 @OA\Property(property="nci", type="string", example="ABC12345")
+     *             )
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Informations du client mises à jour avec succès",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="message", type="string", example="Compte mis à jour avec succès"),
+     *             @OA\Property(property="data", type="object"),
+     *             @OA\Property(property="timestamp", type="string", format="date-time"),
+     *             @OA\Property(property="path", type="string"),
+     *             @OA\Property(property="traceId", type="string")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=400,
+     *         description="Données invalides ou aucun champ fourni",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Non autorisé",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="Accès refusé",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Compte non trouvé",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=429,
+     *         description="Trop de requêtes",
+     *         @OA\JsonContent(type="object")
+     *     )
+     * )
+     */
+    public function update(\App\Http\Requests\UpdateClientInfoRequest $request, Compte $compte)
     {
-        $validated = $request->validate([
-            'numero_compte' => 'sometimes|required|string|max:255|unique:comptes,numero_compte,' . $compte->id,
-            'type' => 'sometimes|required|string|max:255',
-            'solde' => 'sometimes|required|numeric|min:0',
-            'statut' => 'sometimes|required|string|max:255',
-            'client_id' => 'sometimes|required|exists:clients,id',
+        $data = $request->validated();
+
+        // Update client information if provided
+        if (isset($data['informationsClient']) || isset($data['titulaire'])) {
+            $client = $compte->client;
+
+            if (!$client) {
+                return $this->errorResponse('CLIENT_NOT_FOUND', 'Client associé au compte non trouvé', ['compteId' => $compte->id], 404);
+            }
+
+            $clientData = [];
+
+            // Update titulaire if provided
+            if (isset($data['titulaire'])) {
+                $clientData['nom'] = explode(' ', $data['titulaire'])[0] ?? '';
+                $clientData['prenom'] = trim(str_replace(explode(' ', $data['titulaire'])[0] ?? '', '', $data['titulaire']));
+            }
+
+            // Update client information fields
+            if (isset($data['informationsClient'])) {
+                $clientInfo = $data['informationsClient'];
+
+                if (isset($clientInfo['telephone'])) {
+                    $clientData['telephone'] = $clientInfo['telephone'];
+                }
+
+                if (isset($clientInfo['email'])) {
+                    $clientData['email'] = $clientInfo['email'];
+                }
+
+                if (isset($clientInfo['password'])) {
+                    $clientData['password'] = bcrypt($clientInfo['password']);
+                }
+
+                if (isset($clientInfo['nci'])) {
+                    $clientData['nci'] = $clientInfo['nci'];
+                }
+            }
+
+            // Update metadata for versioning
+            $clientData['metadata'] = array_merge($client->metadata ?? [], [
+                'derniereModification' => now()->toISOString(),
+                'version' => ($client->metadata['version'] ?? 1) + 1
+            ]);
+
+            $client->update($clientData);
+        }
+
+        // Update compte metadata
+        $compte->update([
+            'metadata' => array_merge($compte->metadata ?? [], [
+                'derniereModification' => now()->toISOString(),
+                'version' => ($compte->metadata['version'] ?? 1) + 1
+            ])
         ]);
 
-        $compte->update($validated);
-        return response()->json($compte->load('client'), 200);
+        // Reload relationships and return response
+        $compte->load('client');
+        return $this->successResponse(new CompteResource($compte), 'Compte mis à jour avec succès');
     }
 
+    /**
+     * @OA\Delete(
+     *     path="/v1/comptes/{compteId}",
+     *     summary="Supprimer un compte (soft delete)",
+     *     description="Supprime un compte en effectuant un soft delete. Le compte est marqué comme fermé avec une date de fermeture.",
+     *     operationId="deleteCompte",
+     *     tags={"Comptes"},
+     *     security={{"sanctum":{}}},
+     *     @OA\Parameter(
+     *         name="compteId",
+     *         in="path",
+     *         description="ID du compte à supprimer",
+     *         required=true,
+     *         @OA\Schema(type="string", format="uuid")
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Compte supprimé avec succès",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="message", type="string", example="Compte supprimé avec succès"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="id", type="string", format="uuid", example="550e8400-e29b-41d4-a716-446655440000"),
+     *                 @OA\Property(property="numeroCompte", type="string", example="C00123456"),
+     *                 @OA\Property(property="statut", type="string", example="ferme"),
+     *                 @OA\Property(property="dateFermeture", type="string", format="date-time", example="2025-10-19T11:15:00Z")
+     *             ),
+     *             @OA\Property(property="timestamp", type="string", format="date-time"),
+     *             @OA\Property(property="path", type="string"),
+     *             @OA\Property(property="traceId", type="string")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Non autorisé",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="Accès refusé - Seuls les administrateurs peuvent supprimer des comptes",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Compte non trouvé",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=429,
+     *         description="Trop de requêtes",
+     *         @OA\JsonContent(type="object")
+     *     )
+     * )
+     */
     public function destroy(Compte $compte)
     {
+        $user = Auth::user();
+
+        // Only admin can delete accounts
+        $isAdmin = $user ? Admin::where('email', $user->email)->exists() : false;
+        if (!$isAdmin) {
+            return $this->errorResponse('FORBIDDEN', 'Seuls les administrateurs peuvent supprimer des comptes', [], 403);
+        }
+
+        // Check if account is already closed
+        if ($compte->statut === 'ferme') {
+            return $this->errorResponse('ACCOUNT_ALREADY_CLOSED', 'Le compte est déjà fermé', ['compteId' => $compte->id], 400);
+        }
+
+        // Perform soft delete by updating status and setting closure date
+        $compte->update([
+            'statut' => 'ferme',
+            'dateFermeture' => now(),
+        ]);
+
+        // Soft delete the account
         $compte->delete();
-        return response()->json(null, 204);
+
+        // Format response data
+        $responseData = [
+            'id' => $compte->id,
+            'numeroCompte' => $compte->numero_compte,
+            'statut' => $compte->statut,
+            'dateFermeture' => $compte->dateFermeture?->toISOString(),
+        ];
+
+        return $this->successResponse($responseData, 'Compte supprimé avec succès');
     }
 
     /**
@@ -365,13 +693,6 @@ class CompteController extends Controller
             $details[$field] = $messages[0];
         }
 
-        return response()->json([
-            'success' => false,
-            'error' => [
-                'code' => 'VALIDATION_ERROR',
-                'message' => 'Les données fournies sont invalides',
-                'details' => $details
-            ]
-        ], 400);
+        return $this->errorResponse('VALIDATION_ERROR', 'Les données fournies sont invalides', $details, 400);
     }
 }
