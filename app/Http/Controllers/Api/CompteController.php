@@ -9,6 +9,7 @@ use App\Models\Compte;
 use App\Models\Client;
 use App\Models\Admin;
 use App\Services\CloudStorageService;
+use App\Services\SmsService;
 use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -760,8 +761,257 @@ class CompteController extends Controller
      */
     private function sendSMSCode(Client $client, string $code): void
     {
-        // For now, we'll log the SMS content. In production, integrate with an SMS service
-        Log::info("SMS envoyé à {$client->telephone}: Votre code d'authentification: {$code}");
+        try {
+            $smsService = new SmsService();
+            $result = $smsService->sendAuthenticationCode($client->telephone, $code);
+
+            if (!$result) {
+                Log::warning("Échec de l'envoi du SMS au client {$client->id} ({$client->telephone})");
+            }
+        } catch (\Exception $e) {
+            Log::error("Erreur lors de l'envoi du SMS au client {$client->id}: " . $e->getMessage());
+            // Fallback: log the SMS content for development
+            Log::info("SMS de secours - Code pour {$client->telephone}: {$code}");
+        }
+    }
+
+    /**
+     * @OA\Post(
+     *     path="/v1/comptes/{compteId}/bloquer",
+     *     summary="Bloquer un compte épargne",
+     *     description="Bloque un compte épargne actif avec un motif et une durée spécifiée. Seuls les comptes épargne actifs peuvent être bloqués.",
+     *     operationId="bloquerCompte",
+     *     tags={"Comptes"},
+     *     security={{"sanctum":{}}},
+     *     @OA\Parameter(
+     *         name="compteId",
+     *         in="path",
+     *         description="ID du compte à bloquer",
+     *         required=true,
+     *         @OA\Schema(type="string", format="uuid")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"motif","duree","unite"},
+     *             @OA\Property(property="motif", type="string", maxLength=255, example="Activité suspecte détectée"),
+     *             @OA\Property(property="duree", type="integer", minimum=1, example=30),
+     *             @OA\Property(property="unite", type="string", enum={"jours", "mois"}, example="mois")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Compte bloqué avec succès",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="message", type="string", example="Compte bloqué avec succès"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="id", type="string", format="uuid", example="550e8400-e29b-41d4-a716-446655440000"),
+     *                 @OA\Property(property="statut", type="string", example="bloque"),
+     *                 @OA\Property(property="motifBlocage", type="string", example="Activité suspecte détectée"),
+     *                 @OA\Property(property="dateBlocage", type="string", format="date-time"),
+     *                 @OA\Property(property="dateDeblocagePrevue", type="string", format="date-time")
+     *             ),
+     *             @OA\Property(property="timestamp", type="string", format="date-time"),
+     *             @OA\Property(property="path", type="string"),
+     *             @OA\Property(property="traceId", type="string")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=400,
+     *         description="Données invalides ou compte déjà bloqué",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="Accès refusé - Seuls les administrateurs peuvent bloquer des comptes",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Compte non trouvé",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Non autorisé",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=429,
+     *         description="Trop de requêtes",
+     *         @OA\JsonContent(type="object")
+     *     )
+     * )
+     */
+    public function bloquer(Request $request, Compte $compte)
+    {
+        $user = Auth::user();
+
+        // Only admin can block accounts
+        $isAdmin = $user ? Admin::where('email', $user->email)->exists() : false;
+        if (!$isAdmin) {
+            return $this->errorResponse('FORBIDDEN', 'Seuls les administrateurs peuvent bloquer des comptes', [], 403);
+        }
+
+        // Validate request data
+        $validator = validator($request->all(), [
+            'motif' => 'required|string|max:255',
+            'duree' => 'required|integer|min:1',
+            'unite' => 'required|string|in:jours,mois',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->validationErrorResponse($validator->errors());
+        }
+
+        // Check if account is a savings account and active
+        if ($compte->type !== 'epargne') {
+            return $this->errorResponse('INVALID_ACCOUNT_TYPE', 'Seuls les comptes épargne peuvent être bloqués', ['compteId' => $compte->id], 400);
+        }
+
+        if ($compte->statut !== 'actif') {
+            return $this->errorResponse('ACCOUNT_NOT_ACTIVE', 'Le compte doit être actif pour être bloqué', ['compteId' => $compte->id], 400);
+        }
+
+        // Calculate unlock date
+        $now = now();
+        $duree = $request->duree;
+        $unite = $request->unite;
+
+        if ($unite === 'jours') {
+            $dateDeblocagePrevue = $now->copy()->addDays($duree);
+        } else { // mois
+            $dateDeblocagePrevue = $now->copy()->addMonths($duree);
+        }
+
+        // Update account status and blocking information
+        $compte->update([
+            'statut' => 'bloque',
+            'motifBlocage' => $request->motif,
+            'dateBlocage' => $now,
+            'dateDeblocagePrevue' => $dateDeblocagePrevue,
+        ]);
+
+        // Format response data
+        $responseData = [
+            'id' => $compte->id,
+            'statut' => $compte->statut,
+            'motifBlocage' => $compte->motifBlocage,
+            'dateBlocage' => $compte->dateBlocage?->toISOString(),
+            'dateDeblocagePrevue' => $compte->dateDeblocagePrevue?->toISOString(),
+        ];
+
+        return $this->successResponse($responseData, 'Compte bloqué avec succès');
+    }
+
+    /**
+     * @OA\Post(
+     *     path="/v1/comptes/{compteId}/debloquer",
+     *     summary="Débloquer un compte épargne",
+     *     description="Débloque un compte épargne bloqué avec un motif de déblocage.",
+     *     operationId="debloquerCompte",
+     *     tags={"Comptes"},
+     *     security={{"sanctum":{}}},
+     *     @OA\Parameter(
+     *         name="compteId",
+     *         in="path",
+     *         description="ID du compte à débloquer",
+     *         required=true,
+     *         @OA\Schema(type="string", format="uuid")
+     *     ),
+     *     @OA\RequestBody(
+     *         required=true,
+     *         @OA\JsonContent(
+     *             required={"motif"},
+     *             @OA\Property(property="motif", type="string", maxLength=255, example="Vérification complétée")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Compte débloqué avec succès",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="message", type="string", example="Compte débloqué avec succès"),
+     *             @OA\Property(property="data", type="object",
+     *                 @OA\Property(property="id", type="string", format="uuid", example="550e8400-e29b-41d4-a716-446655440000"),
+     *                 @OA\Property(property="statut", type="string", example="actif"),
+     *                 @OA\Property(property="dateDeblocage", type="string", format="date-time")
+     *             ),
+     *             @OA\Property(property="timestamp", type="string", format="date-time"),
+     *             @OA\Property(property="path", type="string"),
+     *             @OA\Property(property="traceId", type="string")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=400,
+     *         description="Données invalides ou compte non bloqué",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="Accès refusé - Seuls les administrateurs peuvent débloquer des comptes",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=404,
+     *         description="Compte non trouvé",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Non autorisé",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=429,
+     *         description="Trop de requêtes",
+     *         @OA\JsonContent(type="object")
+     *     )
+     * )
+     */
+    public function debloquer(Request $request, Compte $compte)
+    {
+        $user = Auth::user();
+
+        // Only admin can unblock accounts
+        $isAdmin = $user ? Admin::where('email', $user->email)->exists() : false;
+        if (!$isAdmin) {
+            return $this->errorResponse('FORBIDDEN', 'Seuls les administrateurs peuvent débloquer des comptes', [], 403);
+        }
+
+        // Validate request data
+        $validator = validator($request->all(), [
+            'motif' => 'required|string|max:255',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->validationErrorResponse($validator->errors());
+        }
+
+        // Check if account is blocked
+        if ($compte->statut !== 'bloque') {
+            return $this->errorResponse('ACCOUNT_NOT_BLOCKED', 'Le compte n\'est pas bloqué', ['compteId' => $compte->id], 400);
+        }
+
+        // Update account status and clear blocking information
+        $compte->update([
+            'statut' => 'actif',
+            'motifBlocage' => null,
+            'dateBlocage' => null,
+            'dateDeblocagePrevue' => null,
+        ]);
+
+        // Format response data
+        $responseData = [
+            'id' => $compte->id,
+            'statut' => $compte->statut,
+            'dateDeblocage' => now()->toISOString(),
+        ];
+
+        return $this->successResponse($responseData, 'Compte débloqué avec succès');
     }
 
     /**

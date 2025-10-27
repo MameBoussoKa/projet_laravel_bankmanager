@@ -2,7 +2,6 @@
 
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\ClientController;
 use App\Http\Controllers\Api\CompteController;
 use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\AdminController;
@@ -24,8 +23,10 @@ Route::get('/user', function (Request $request) {
 });
 
 Route::prefix('v1')->middleware(['api.rate.limit', 'api.user.rate.limit', 'api.response.format', 'rating'])->group(function () {
-    Route::apiResource('clients', ClientController::class);
+    
     Route::apiResource('comptes', CompteController::class)->middleware(['logging']);
+    Route::post('comptes/{compte}/bloquer', [CompteController::class, 'bloquer'])->middleware(['logging']);
+    Route::post('comptes/{compte}/debloquer', [CompteController::class, 'debloquer'])->middleware(['logging']);
     Route::apiResource('transactions', TransactionController::class);
     Route::apiResource('admins', AdminController::class);
 });

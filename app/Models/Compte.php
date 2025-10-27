@@ -19,12 +19,14 @@ class Compte extends Model
         static::addGlobalScope(new ActiveScope);
     }
 
-    protected $fillable = ['numero_compte', 'type', 'statut', 'client_id', 'devise', 'motifBlocage', 'metadata', 'dateFermeture'];
+    protected $fillable = ['numero_compte', 'type', 'statut', 'client_id', 'devise', 'motifBlocage', 'metadata', 'dateFermeture', 'dateBlocage', 'dateDeblocagePrevue'];
 
     protected $casts = [
         'solde' => 'decimal:2',
         'metadata' => 'array',
         'dateFermeture' => 'datetime',
+        'dateBlocage' => 'datetime',
+        'dateDeblocagePrevue' => 'datetime',
     ];
 
     public function client()
