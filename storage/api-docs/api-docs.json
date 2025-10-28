@@ -11,7 +11,7 @@
             "description": "Production API server"
         },
         {
-            "url": "http://api.banque.example.com/api/v1"
+            "url": "https://projet-laravel-bankmanager.onrender.com/api/v1"
         }
     ],
     "paths": {
@@ -727,6 +727,323 @@
                     },
                     "404": {
                         "description": "Compte non trouvé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Trop de requêtes",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/v1/comptes/{compteId}/bloquer": {
+            "post": {
+                "tags": [
+                    "Comptes"
+                ],
+                "summary": "Bloquer un compte épargne",
+                "description": "Bloque un compte épargne actif avec un motif et une durée spécifiée. Seuls les comptes épargne actifs peuvent être bloqués.",
+                "operationId": "bloquerCompte",
+                "parameters": [
+                    {
+                        "name": "compteId",
+                        "in": "path",
+                        "description": "ID du compte à bloquer",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "motif",
+                                    "duree",
+                                    "unite"
+                                ],
+                                "properties": {
+                                    "motif": {
+                                        "type": "string",
+                                        "maxLength": 255,
+                                        "example": "Activité suspecte détectée"
+                                    },
+                                    "duree": {
+                                        "type": "integer",
+                                        "minimum": 1,
+                                        "example": 30
+                                    },
+                                    "unite": {
+                                        "type": "string",
+                                        "enum": [
+                                            "jours",
+                                            "mois"
+                                        ],
+                                        "example": "mois"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Compte bloqué avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Compte bloqué avec succès"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "format": "uuid",
+                                                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                                                },
+                                                "statut": {
+                                                    "type": "string",
+                                                    "example": "bloque"
+                                                },
+                                                "motifBlocage": {
+                                                    "type": "string",
+                                                    "example": "Activité suspecte détectée"
+                                                },
+                                                "dateBlocage": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "dateDeblocagePrevue": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "timestamp": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "path": {
+                                            "type": "string"
+                                        },
+                                        "traceId": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Données invalides ou compte déjà bloqué",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Accès refusé - Seuls les administrateurs peuvent bloquer des comptes",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Compte non trouvé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Non autorisé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Trop de requêtes",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/v1/comptes/{compteId}/debloquer": {
+            "post": {
+                "tags": [
+                    "Comptes"
+                ],
+                "summary": "Débloquer un compte épargne",
+                "description": "Débloque un compte épargne bloqué avec un motif de déblocage.",
+                "operationId": "debloquerCompte",
+                "parameters": [
+                    {
+                        "name": "compteId",
+                        "in": "path",
+                        "description": "ID du compte à débloquer",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "format": "uuid"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "required": [
+                                    "motif"
+                                ],
+                                "properties": {
+                                    "motif": {
+                                        "type": "string",
+                                        "maxLength": 255,
+                                        "example": "Vérification complétée"
+                                    }
+                                },
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Compte débloqué avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "message": {
+                                            "type": "string",
+                                            "example": "Compte débloqué avec succès"
+                                        },
+                                        "data": {
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string",
+                                                    "format": "uuid",
+                                                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                                                },
+                                                "statut": {
+                                                    "type": "string",
+                                                    "example": "actif"
+                                                },
+                                                "dateDeblocage": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                }
+                                            },
+                                            "type": "object"
+                                        },
+                                        "timestamp": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "path": {
+                                            "type": "string"
+                                        },
+                                        "traceId": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Données invalides ou compte non bloqué",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Accès refusé - Seuls les administrateurs peuvent débloquer des comptes",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Compte non trouvé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Non autorisé",
                         "content": {
                             "application/json": {
                                 "schema": {
