@@ -5,14 +5,16 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Transaction;
 use App\Models\Compte;
+use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 
 class TransactionController extends Controller
 {
+    use ApiResponseTrait;
     public function index()
     {
         $transactions = Transaction::with('compte')->get();
-        return response()->json($transactions, 200);
+        return $this->successResponse($transactions);
     }
 
     public function store(Request $request)
@@ -36,12 +38,12 @@ class TransactionController extends Controller
         }
         $compte->save();
 
-        return response()->json($transaction->load('compte'), 201);
+        return $this->successResponse($transaction->load('compte'), 'Transaction créée avec succès', 201);
     }
 
     public function show(Transaction $transaction)
     {
-        return response()->json($transaction->load('compte'), 200);
+        return $this->successResponse($transaction->load('compte'));
     }
 
     public function update(Request $request, Transaction $transaction)
@@ -81,7 +83,7 @@ class TransactionController extends Controller
             $newCompte->save();
         }
 
-        return response()->json($transaction->load('compte'), 200);
+        return $this->successResponse($transaction->load('compte'), 'Transaction mise à jour avec succès');
     }
 
     public function destroy(Transaction $transaction)
@@ -96,6 +98,6 @@ class TransactionController extends Controller
         $compte->save();
 
         $transaction->delete();
-        return response()->json(null, 204);
+        return $this->successResponse(null, 'Transaction supprimée avec succès', 204);
     }
 }

@@ -4,14 +4,16 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\Admin;
+use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 
 class AdminController extends Controller
 {
+    use ApiResponseTrait;
     public function index()
     {
         $admins = Admin::all();
-        return response()->json($admins, 200);
+        return $this->successResponse($admins);
     }
 
     public function store(Request $request)
@@ -23,12 +25,12 @@ class AdminController extends Controller
         ]);
 
         $admin = Admin::create($validated);
-        return response()->json($admin, 201);
+        return $this->successResponse($admin, 'Administrateur créé avec succès', 201);
     }
 
     public function show(Admin $admin)
     {
-        return response()->json($admin, 200);
+        return $this->successResponse($admin);
     }
 
     public function update(Request $request, Admin $admin)
@@ -40,12 +42,12 @@ class AdminController extends Controller
         ]);
 
         $admin->update($validated);
-        return response()->json($admin, 200);
+        return $this->successResponse($admin, 'Administrateur mis à jour avec succès');
     }
 
     public function destroy(Admin $admin)
     {
         $admin->delete();
-        return response()->json(null, 204);
+        return $this->successResponse(null, 'Administrateur supprimé avec succès', 204);
     }
 }
