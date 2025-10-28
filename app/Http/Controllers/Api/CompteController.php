@@ -369,7 +369,6 @@ class CompteController extends Controller
 
         // Create initial deposit transaction to set the balance
         $transaction = new \App\Models\Transaction([
-            'numero_transaction' => 'TXN' . strtoupper(uniqid()),
             'type' => 'depot',
             'montant' => $data['soldeInitial'],
             'date' => now(),
