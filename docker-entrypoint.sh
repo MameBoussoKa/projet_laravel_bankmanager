@@ -9,6 +9,8 @@ done
 
 echo "Database is up - executing migrations"
 php artisan migrate --force
+php artisan db:seed --force
+php artisan l5-swagger:generate
 
 echo "Starting Laravel application..."
 exec "$@"
