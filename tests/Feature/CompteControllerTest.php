@@ -55,8 +55,7 @@ class CompteControllerTest extends TestCase
         $this->assertSoftDeleted($compte);
         $this->assertDatabaseHas('comptes', [
             'id' => $compte->id,
-            'statut' => 'ferme',
-            'deleted_at' => now()
+            'statut' => 'ferme'
         ]);
     }
 

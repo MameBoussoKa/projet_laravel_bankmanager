@@ -7,8 +7,8 @@
     },
     "servers": [
         {
-            "url": "http://api.banque.example.com/api/v1",
-            "description": "Production API server"
+            "url": "http://127.0.0.1:8000/api",
+            "description": "Local Development API server"
         },
         {
             "url": "https://projet-laravel-bankmanager.onrender.com/api/v1"

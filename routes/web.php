@@ -14,5 +14,5 @@ use Illuminate\Support\Facades\Route;
 */
 
 Route::get('/', function () {
-    return redirect()->to('https://projet-laravel-bankmanager.onrender.com/api/v1/docs');
+    return redirect('/api/v1/documentation');
 });

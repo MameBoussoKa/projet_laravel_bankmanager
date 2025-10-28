@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('numero_compte')->unique();
             $table->enum('type', ['courant', 'epargne']);
-            $table->decimal('solde', 15, 2);
+            $table->decimal('solde', 15, 2)->nullable();
             $table->enum('statut', ['actif', 'bloque', 'ferme']);
             $table->foreignId('client_id')->constrained('clients')->onDelete('cascade');
             $table->timestamps();

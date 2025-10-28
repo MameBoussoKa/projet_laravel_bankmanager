@@ -25,8 +25,8 @@ use Illuminate\Support\Str;
  * )
  *
  * @OA\Server(
- *     url="http://api.banque.example.com/api/v1",
- *     description="Production API server"
+ *     url="http://127.0.0.1:8000/api",
+ *     description="Local Development API server"
  * )
  *
  * @OA\Tag(
@@ -366,6 +366,17 @@ class CompteController extends Controller
         ];
 
         $compte = Compte::create($compteData);
+
+        // Create initial deposit transaction to set the balance
+        $transaction = new \App\Models\Transaction([
+            'numero_transaction' => 'TXN' . strtoupper(uniqid()),
+            'type' => 'depot',
+            'montant' => $data['soldeInitial'],
+            'date' => now(),
+            'statut' => 'valide',
+            'compte_id' => $compte->id,
+        ]);
+        $transaction->save();
 
         // Format response using Resource
         return $this->successResponse(new CompteResource($compte), 'Compte créé avec succès', 201);

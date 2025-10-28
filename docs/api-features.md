@@ -319,7 +319,7 @@ Configuration automatique avec annotations PHP.
  * )
  *
  * @OA\Server(
- *     url="http://api.banque.example.com/api/v1",
+ *     url="http://api.banque.example.com/api",
  *     description="Production API server"
  * )
  */
