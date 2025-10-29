@@ -157,7 +157,6 @@ return [
              * @see \OpenApi\scan
              */
             'exclude' => [
-                app_path('Http/Controllers/Api/ClientController.php'),
                 app_path('Http/Controllers/Api/TransactionController.php'),
                 app_path('Http/Controllers/Api/AdminController.php'),
             ],
