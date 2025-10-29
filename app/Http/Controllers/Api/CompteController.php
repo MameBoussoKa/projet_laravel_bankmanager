@@ -176,9 +176,10 @@ class CompteController extends Controller
 
         if (array_key_exists($sortBy, $sortFields)) {
             if ($sortBy === 'titulaire') {
-                $query->join('clients', 'comptes.client_id', '=', 'clients.id')
-                      ->orderBy('clients.nom', $sortOrder)
-                      ->orderBy('clients.prenom', $sortOrder)
+                // Use left join to avoid issues with accounts that might not have clients
+                $query->leftJoin('clients', 'comptes.client_id', '=', 'clients.id')
+                      ->orderByRaw("COALESCE(clients.nom, '') {$sortOrder}")
+                      ->orderByRaw("COALESCE(clients.prenom, '') {$sortOrder}")
                       ->select('comptes.*');
             } else {
                 $query->orderBy($sortFields[$sortBy], $sortOrder);
