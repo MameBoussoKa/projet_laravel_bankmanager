@@ -7,8 +7,8 @@
     },
     "servers": [
         {
-            "url": "http://127.0.0.1:8000/api",
-            "description": "Local Development API server"
+            "url": "https://projet-laravel-bankmanager.onrender.com/api",
+            "description": "Production API server"
         },
         {
             "url": "https://projet-laravel-bankmanager.onrender.com/api/v1"
@@ -374,8 +374,7 @@
                         "description": "ID du compte à récupérer",
                         "required": true,
                         "schema": {
-                            "type": "string",
-                            "format": "uuid"
+                            "type": "integer"
                         }
                     }
                 ],
@@ -618,8 +617,7 @@
                         "description": "ID du compte",
                         "required": true,
                         "schema": {
-                            "type": "string",
-                            "format": "uuid"
+                            "type": "integer"
                         }
                     }
                 ],
@@ -768,8 +766,7 @@
                         "description": "ID du compte à bloquer",
                         "required": true,
                         "schema": {
-                            "type": "string",
-                            "format": "uuid"
+                            "type": "integer"
                         }
                     }
                 ],
@@ -938,8 +935,7 @@
                         "description": "ID du compte à débloquer",
                         "required": true,
                         "schema": {
-                            "type": "string",
-                            "format": "uuid"
+                            "type": "integer"
                         }
                     }
                 ],

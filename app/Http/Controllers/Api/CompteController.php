@@ -25,8 +25,8 @@ use Illuminate\Support\Str;
  * )
  *
  * @OA\Server(
- *     url="http://127.0.0.1:8000/api",
- *     description="Local Development API server"
+ *     url="https://projet-laravel-bankmanager.onrender.com/api",
+ *     description="Production API server"
  * )
  *
  * @OA\Tag(
@@ -394,7 +394,7 @@ class CompteController extends Controller
      *         in="path",
      *         description="ID du compte à récupérer",
      *         required=true,
-     *         @OA\Schema(type="string", format="uuid")
+     *         @OA\Schema(type="integer")
      *     ),
      *     @OA\Response(
      *         response=200,
@@ -518,7 +518,7 @@ class CompteController extends Controller
      *         in="path",
      *         description="ID du compte",
      *         required=true,
-     *         @OA\Schema(type="string", format="uuid")
+     *         @OA\Schema(type="integer")
      *     ),
      *     @OA\RequestBody(
      *         required=true,
@@ -798,7 +798,7 @@ class CompteController extends Controller
      *         in="path",
      *         description="ID du compte à bloquer",
      *         required=true,
-     *         @OA\Schema(type="string", format="uuid")
+     *         @OA\Schema(type="integer")
      *     ),
      *     @OA\RequestBody(
      *         required=true,
@@ -929,7 +929,7 @@ class CompteController extends Controller
      *         in="path",
      *         description="ID du compte à débloquer",
      *         required=true,
-     *         @OA\Schema(type="string", format="uuid")
+     *         @OA\Schema(type="integer")
      *     ),
      *     @OA\RequestBody(
      *         required=true,
