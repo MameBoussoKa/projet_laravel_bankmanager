@@ -8,11 +8,11 @@ use Illuminate\Database\Eloquent\Model;
 class Transaction extends Model
 {
     use HasFactory;
-    protected $fillable = ['type', 'montant', 'date', 'statut', 'compte_id'];
+    protected $fillable = ['type', 'montant', 'date_transaction', 'statut', 'compte_id'];
 
     protected $casts = [
         'montant' => 'decimal:2',
-        'date' => 'datetime',
+        'date_transaction' => 'datetime',
     ];
 
     public function compte()

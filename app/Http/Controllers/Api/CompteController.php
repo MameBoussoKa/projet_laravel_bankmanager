@@ -372,7 +372,7 @@ class CompteController extends Controller
         $transaction = new \App\Models\Transaction([
             'type' => 'depot',
             'montant' => $data['soldeInitial'],
-            'date' => now(),
+            'date_transaction' => now(),
             'statut' => 'valide',
             'compte_id' => $compte->id,
         ]);
