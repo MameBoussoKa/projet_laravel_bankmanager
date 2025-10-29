@@ -187,37 +187,14 @@ class CompteController extends Controller
             $query->orderBy('created_at', 'desc');
         }
 
-        // Handle archived accounts for savings type
+        // Handle archived accounts for savings type - Temporarily disabled
+        // TODO: Implement proper cloud storage service configuration
         if ($request->has('include_archived') && $request->include_archived && $request->type === 'epargne') {
+            // Return only local accounts for now
             $perPage = min($request->get('limit', 10), 100);
-            $cloudService = new CloudStorageService();
-            $archivedAccounts = $cloudService->getArchivedSavingsAccounts([
-                'page' => $request->get('page', 1),
-                'limit' => $perPage,
-                'search' => $request->search,
-            ]);
-
-            // Merge local and archived accounts
             $localComptes = $query->paginate($perPage);
-            $allAccounts = array_merge($localComptes->items(), $archivedAccounts['data'] ?? []);
 
-            // Create custom response for mixed data
-            return $this->successResponse([
-                'data' => $allAccounts,
-                'pagination' => [
-                    'currentPage' => $request->get('page', 1),
-                    'totalPages' => max($localComptes->lastPage(), $archivedAccounts['pagination']['totalPages'] ?? 1),
-                    'totalItems' => $localComptes->total() + ($archivedAccounts['pagination']['totalItems'] ?? 0),
-                    'itemsPerPage' => $perPage,
-                    'hasNext' => ($request->get('page', 1) * $perPage) < ($localComptes->total() + ($archivedAccounts['pagination']['totalItems'] ?? 0)),
-                    'hasPrevious' => $request->get('page', 1) > 1,
-                ],
-                'links' => [
-                    'self' => $request->url() . '?' . $request->getQueryString(),
-                    'next' => $request->url() . '?' . http_build_query(array_merge($request->query(), ['page' => $request->get('page', 1) + 1])),
-                    'first' => $request->url() . '?' . http_build_query(array_merge($request->query(), ['page' => 1])),
-                ],
-            ]);
+            return $this->successResponse(new CompteCollection($localComptes));
         }
 
         // Pagination
@@ -472,36 +449,8 @@ class CompteController extends Controller
             }
         }
 
-        // If not found locally or needs cloud search, try cloud storage
-        $cloudService = new CloudStorageService();
-        $archivedAccount = $cloudService->getArchivedAccount($compteId);
-
-        if ($archivedAccount) {
-            // If user is client, check if the account belongs to them
-            if ($isClient && $user) {
-                $client = Client::where('email', $user->email)->first();
-                if (!$client || $archivedAccount['client_id'] !== $client->id) {
-                    return $this->errorResponse('FORBIDDEN', 'Vous n\'avez pas accès à ce compte', ['compteId' => $compteId], 403);
-                }
-            }
-            // Admin can access any account
-
-            // Format archived account data to match CompteResource format
-            $formattedAccount = [
-                'id' => $archivedAccount['id'],
-                'numeroCompte' => $archivedAccount['numero_compte'],
-                'titulaire' => $archivedAccount['titulaire'],
-                'type' => $archivedAccount['type'],
-                'solde' => $archivedAccount['solde'],
-                'devise' => $archivedAccount['devise'] ?? 'FCFA',
-                'dateCreation' => $archivedAccount['date_creation'],
-                'statut' => $archivedAccount['statut'] ?? 'archive',
-                'motifBlocage' => $archivedAccount['motifBlocage'] ?? null,
-                'metadata' => $archivedAccount['metadata'] ?? ['version' => 1],
-            ];
-
-            return $this->successResponse($formattedAccount);
-        }
+        // Cloud storage search temporarily disabled
+        // TODO: Implement proper cloud storage service configuration
 
         // Account not found in local or cloud
         return $this->errorResponse('COMPTE_NOT_FOUND', 'Le compte avec l\'ID spécifié n\'existe pas', ['compteId' => $compteId], 404);
