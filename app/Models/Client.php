@@ -10,7 +10,7 @@ class Client extends Model
 {
     use HasApiTokens, HasFactory;
 
-    protected $fillable = ['nom', 'prenom', 'email', 'telephone', 'adresse', 'password', 'nci'];
+    protected $fillable = ['nom', 'prenom', 'email', 'telephone', 'adresse', 'password', 'nci', 'is_active'];
 
     protected $hidden = ['password'];
 

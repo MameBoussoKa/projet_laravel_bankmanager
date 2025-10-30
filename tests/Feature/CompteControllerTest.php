@@ -5,7 +5,6 @@ namespace Tests\Feature;
 use App\Models\Admin;
 use App\Models\Client;
 use App\Models\Compte;
-use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Tests\TestCase;
@@ -22,11 +21,6 @@ class CompteControllerTest extends TestCase
         // Create admin user
         $admin = Admin::factory()->create();
 
-        // Create a User for authentication (since Admin doesn't implement Authenticatable)
-        $user = User::factory()->create([
-            'email' => $admin->email
-        ]);
-
         // Create client and compte
         $client = Client::factory()->create();
         $compte = Compte::factory()->create([
@@ -34,10 +28,7 @@ class CompteControllerTest extends TestCase
             'statut' => 'actif'
         ]);
 
-        // Authenticate as user (admin)
-        $this->actingAs($user, 'sanctum');
-
-        // Delete the compte
+        // Delete the compte (no authentication needed)
         $response = $this->deleteJson("/api/v1/comptes/{$compte->id}");
 
         $response->assertStatus(200)
@@ -67,21 +58,13 @@ class CompteControllerTest extends TestCase
         // Create client user
         $client = Client::factory()->create();
 
-        // Create a User for authentication (since Client doesn't implement Authenticatable)
-        $user = User::factory()->create([
-            'email' => $client->email
-        ]);
-
         // Create compte for this client
         $compte = Compte::factory()->create([
             'client_id' => $client->id,
             'statut' => 'actif'
         ]);
 
-        // Authenticate as user (client)
-        $this->actingAs($user, 'sanctum');
-
-        // Try to delete the compte
+        // Try to delete the compte (no authentication needed)
         $response = $this->deleteJson("/api/v1/comptes/{$compte->id}");
 
         $response->assertStatus(403)
@@ -109,11 +92,6 @@ class CompteControllerTest extends TestCase
         // Create admin user
         $admin = Admin::factory()->create();
 
-        // Create a User for authentication (since Admin doesn't implement Authenticatable)
-        $user = User::factory()->create([
-            'email' => $admin->email
-        ]);
-
         // Create client and already closed compte
         $client = Client::factory()->create();
         $compte = Compte::factory()->create([
@@ -121,10 +99,7 @@ class CompteControllerTest extends TestCase
             'statut' => 'ferme'
         ]);
 
-        // Authenticate as user (admin)
-        $this->actingAs($user, 'sanctum');
-
-        // Try to delete the already closed compte
+        // Try to delete the already closed compte (no authentication needed)
         $response = $this->deleteJson("/api/v1/comptes/{$compte->id}");
 
         $response->assertStatus(400)
@@ -145,15 +120,7 @@ class CompteControllerTest extends TestCase
         // Create admin user
         $admin = Admin::factory()->create();
 
-        // Create a User for authentication (since Admin doesn't implement Authenticatable)
-        $user = User::factory()->create([
-            'email' => $admin->email
-        ]);
-
-        // Authenticate as user (admin)
-        $this->actingAs($user, 'sanctum');
-
-        // Try to delete non-existent compte
+        // Try to delete non-existent compte (no authentication needed)
         $response = $this->deleteJson("/api/v1/comptes/999");
 
         $response->assertStatus(404);

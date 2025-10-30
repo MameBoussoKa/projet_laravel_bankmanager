@@ -28,8 +28,6 @@ class LoggingMiddleware
             'timestamp' => now()->toISOString(),
             'operation' => $this->getOperationName($request),
             'resource' => $this->getResourceName($request),
-            'user_id' => auth()->id(),
-            'user_email' => auth()->user() ? auth()->user()->email : null,
         ]);
 
         $response = $next($request);
@@ -46,8 +44,6 @@ class LoggingMiddleware
             'timestamp' => now()->toISOString(),
             'operation' => $this->getOperationName($request),
             'resource' => $this->getResourceName($request),
-            'user_id' => auth()->id(),
-            'user_email' => auth()->user() ? auth()->user()->email : null,
         ]);
 
         return $response;

@@ -37,4 +37,9 @@ return [
         'from' => env('TWILIO_FROM'),
     ],
 
+    'cloud_storage' => [
+        'url' => env('CLOUD_STORAGE_URL', 'https://api.cloud-storage.example.com/v1'),
+        'api_key' => env('CLOUD_STORAGE_API_KEY', 'default-api-key'),
+    ],
+
 ];

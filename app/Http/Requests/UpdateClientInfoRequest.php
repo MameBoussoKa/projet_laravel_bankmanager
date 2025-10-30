@@ -12,8 +12,9 @@ class UpdateClientInfoRequest extends FormRequest
      */
     public function authorize(): bool
     {
-        // Only admin can update client information
-        return auth()->user() && \App\Models\Admin::where('email', auth()->user()->email)->exists();
+        // Since authentication is removed, allow all requests for now
+        // In a real scenario, you might want to implement API key authentication or other authorization
+        return true;
     }
 
     /**

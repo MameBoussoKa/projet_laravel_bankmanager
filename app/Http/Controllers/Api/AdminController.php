@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 class AdminController extends Controller
 {
     use ApiResponseTrait;
+
     public function index()
     {
         $admins = Admin::all();
