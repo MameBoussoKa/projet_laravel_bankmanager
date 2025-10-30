@@ -14,7 +14,7 @@ class CompteResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        return [
+        $data = [
             'id' => $this->id,
             'numeroCompte' => $this->numero_compte,
             'titulaire' => $this->titulaire,
@@ -29,5 +29,13 @@ class CompteResource extends JsonResource
                 'version' => $this->metadata['version'] ?? 1,
             ],
         ];
+
+        // Add blocking dates only for savings accounts
+        if ($this->type === 'epargne') {
+            $data['dateBlocage'] = $this->dateBlocage?->toISOString();
+            $data['dateDeblocagePrevue'] = $this->dateDeblocagePrevue?->toISOString();
+        }
+
+        return $data;
     }
 }

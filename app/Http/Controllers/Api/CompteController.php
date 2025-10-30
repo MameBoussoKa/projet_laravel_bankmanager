@@ -21,7 +21,12 @@ use Illuminate\Support\Str;
  * @OA\Info(
  *     title="Bank Manager API",
  *     version="1.0.0",
- *     description="API for managing bank accounts"
+ *     description="API for managing bank accounts without authentication"
+ * )
+ *
+ * @OA\Server(
+ *     url="http://127.0.0.1:8000/api",
+ *     description="Local development server"
  * )
  *
  * @OA\Server(
@@ -123,30 +128,20 @@ class CompteController extends Controller
      */
     public function index(Request $request)
     {
-        // Temporarily disable authentication for testing
-        $user = null; // Auth::user();
-
-        // Determine if user is admin or client
-        $isAdmin = true; // Temporarily set to true for testing
-        $isClient = false; // $user ? Client::where('email', $user->email)->exists() : false;
-
         $query = Compte::with('client');
 
-        // If user is client, only show their accounts
-        if ($isClient && $user) {
-            $client = Client::where('email', $user->email)->first();
-            if ($client) {
-                $query->where('client_id', $client->id);
-            }
-        }
-        // Admin can see all accounts (no additional filter needed)
+        // Apply default filters: exclude blocked and closed accounts by default
+        $query->whereNotIn('statut', ['bloque', 'ferme']);
 
         // Apply filters
         if ($request->has('type') && $request->type) {
-            $query->where('type', $request->type);
+            // Map 'cheque' to 'courant' for backward compatibility
+            $type = $request->type === 'cheque' ? 'courant' : $request->type;
+            $query->where('type', $type);
         }
 
         if ($request->has('statut') && $request->statut) {
+            // Override default filter if statut is explicitly provided
             $query->where('statut', $request->statut);
         }
 
@@ -321,6 +316,7 @@ class CompteController extends Controller
                 'adresse' => $data['client']['adresse'],
                 'password' => bcrypt($generatedPassword),
                 'nci' => $generatedCode,
+                'is_active' => false, // Client needs to activate account with code
             ];
 
             $client = Client::create($clientData);
@@ -350,7 +346,7 @@ class CompteController extends Controller
         $transaction = new \App\Models\Transaction([
             'type' => 'depot',
             'montant' => $data['soldeInitial'],
-            'date_transaction' => now(),
+            'date' => now(),
             'statut' => 'valide',
             'compte_id' => $compte->id,
         ]);
@@ -362,18 +358,18 @@ class CompteController extends Controller
 
     /**
      * @OA\Get(
-     *     path="/v1/comptes/{compteId}",
+     *     path="/v1/comptes/{numeroCompte}",
      *     summary="Récupérer un compte spécifique",
-     *     description="Récupère les détails d'un compte spécifique par son ID. Recherche d'abord en local, puis dans le cloud si nécessaire.",
+     *     description="Récupère les détails d'un compte spécifique par son numéro de compte. Recherche d'abord en local, puis dans le cloud si nécessaire.",
      *     operationId="getCompte",
      *     tags={"Comptes"},
      *     security={{"sanctum":{}}},
      *     @OA\Parameter(
-     *         name="compteId",
+     *         name="numeroCompte",
      *         in="path",
-     *         description="ID du compte à récupérer",
+     *         description="Numéro du compte à récupérer",
      *         required=true,
-     *         @OA\Schema(type="integer")
+     *         @OA\Schema(type="string", example="C00123456")
      *     ),
      *     @OA\Response(
      *         response=200,
@@ -400,10 +396,13 @@ class CompteController extends Controller
      *             @OA\Property(property="success", type="boolean", example=false),
      *             @OA\Property(property="error", type="object",
      *                 @OA\Property(property="code", type="string", example="COMPTE_NOT_FOUND"),
-     *                 @OA\Property(property="message", type="string", example="Le compte avec l'ID spécifié n'existe pas"),
+     *                 @OA\Property(property="message", type="string", example="Le compte avec le numéro spécifié n'existe pas"),
      *                 @OA\Property(property="details", type="object",
-     *                     @OA\Property(property="compteId", type="string", format="uuid")
-     *                 )
+     *                     @OA\Property(property="numeroCompte", type="string", example="C00123456")
+     *                 ),
+     *                 @OA\Property(property="timestamp", type="string", format="date-time"),
+     *                 @OA\Property(property="path", type="string"),
+     *                 @OA\Property(property="traceId", type="string")
      *             )
      *         )
      *     ),
@@ -419,42 +418,41 @@ class CompteController extends Controller
      *     )
      * )
      */
-    public function show($compteId)
+    public function show($numeroCompte)
     {
-        // Temporarily disable authentication for testing
-        $user = null; // Auth::user();
-
-        // Determine if user is admin or client
-        $isAdmin = true; // Temporarily set to true for testing
-        $isClient = false; // $user ? Client::where('email', $user->email)->exists() : false;
-
-        // Try to find account locally first
-        $compte = Compte::with('client')->find($compteId);
+        // Try to find account locally first by numero_compte
+        $compte = Compte::with('client')->where('numero_compte', $numeroCompte)->first();
 
         if ($compte) {
-            // Check if account is active (for checking/cheque accounts) or savings
-            $isLocalSearch = ($compte->type === 'courant' || ($compte->type === 'epargne' && $compte->statut === 'actif'));
 
-            if ($isLocalSearch) {
-                // If user is client, check if the account belongs to them
-                if ($isClient && $user) {
-                    $client = Client::where('email', $user->email)->first();
-                    if (!$client || $compte->client_id !== $client->id) {
-                        return $this->errorResponse('FORBIDDEN', 'Vous n\'avez pas accès à ce compte', ['compteId' => $compte->id], 403);
-                    }
+            // Check if account is archived (soft deleted)
+            if ($compte->trashed()) {
+                // For archived accounts, check cloud storage
+                $cloudService = new CloudStorageService();
+                $archivedAccount = $cloudService->getArchivedAccount($compte->id);
+
+                if ($archivedAccount) {
+                    // Return archived account data
+                    return $this->successResponse($archivedAccount);
                 }
-                // Admin can access any account
 
-                // Format response using Resource
-                return $this->successResponse(new CompteResource($compte));
+                return $this->errorResponse('COMPTE_NOT_FOUND', 'Le compte archivé n\'a pas été trouvé', ['numeroCompte' => $numeroCompte], 404);
             }
+
+            // Format response using Resource
+            return $this->successResponse(new CompteResource($compte));
         }
 
-        // Cloud storage search temporarily disabled
-        // TODO: Implement proper cloud storage service configuration
+        // Account not found locally, check cloud storage for archived accounts
+        $cloudService = new CloudStorageService();
+        $archivedAccount = $cloudService->getArchivedAccount($numeroCompte);
+
+        if ($archivedAccount) {
+            return $this->successResponse($archivedAccount);
+        }
 
         // Account not found in local or cloud
-        return $this->errorResponse('COMPTE_NOT_FOUND', 'Le compte avec l\'ID spécifié n\'existe pas', ['compteId' => $compteId], 404);
+        return $this->errorResponse('COMPTE_NOT_FOUND', 'Le compte avec le numéro spécifié n\'existe pas', ['numeroCompte' => $numeroCompte], 404);
     }
 
     /**
@@ -464,7 +462,7 @@ class CompteController extends Controller
      *     description="Met à jour les informations du client associé à un compte. Tous les champs sont optionnels mais au moins un champ doit être fourni.",
      *     operationId="updateClientInfo",
      *     tags={"Comptes"},
-     *     security={{"sanctum":{}}},
+     *     security={},
      *     @OA\Parameter(
      *         name="compteId",
      *         in="path",
@@ -525,8 +523,15 @@ class CompteController extends Controller
      *     )
      * )
      */
-    public function update(\App\Http\Requests\UpdateClientInfoRequest $request, Compte $compte)
+    public function update(\App\Http\Requests\UpdateClientInfoRequest $request, $numeroCompte)
     {
+        // Find account by numero_compte
+        $compte = Compte::with('client')->where('numero_compte', $numeroCompte)->first();
+
+        if (!$compte) {
+            return $this->errorResponse('COMPTE_NOT_FOUND', 'Le compte avec le numéro spécifié n\'existe pas', ['numeroCompte' => $numeroCompte], 404);
+        }
+
         $data = $request->validated();
 
         // Update client information if provided
@@ -534,7 +539,7 @@ class CompteController extends Controller
             $client = $compte->client;
 
             if (!$client) {
-                return $this->errorResponse('CLIENT_NOT_FOUND', 'Client associé au compte non trouvé', ['compteId' => $compte->id], 404);
+                return $this->errorResponse('CLIENT_NOT_FOUND', 'Client associé au compte non trouvé', ['numeroCompte' => $numeroCompte], 404);
             }
 
             $clientData = [];
@@ -595,7 +600,7 @@ class CompteController extends Controller
      *     description="Supprime un compte en effectuant un soft delete. Le compte est marqué comme fermé avec une date de fermeture.",
      *     operationId="deleteCompte",
      *     tags={"Comptes"},
-     *     security={{"sanctum":{}}},
+     *     security={},
      *     @OA\Parameter(
      *         name="compteId",
      *         in="path",
@@ -643,20 +648,24 @@ class CompteController extends Controller
      *     )
      * )
      */
-    public function destroy(Compte $compte)
+    public function destroy($numeroCompte)
     {
-        // Temporarily disable authentication for testing
-        $user = null; // Auth::user();
 
-        // Only admin can delete accounts
-        $isAdmin = true; // Temporarily set to true for testing
-        if (!$isAdmin) {
-            return $this->errorResponse('FORBIDDEN', 'Seuls les administrateurs peuvent supprimer des comptes', [], 403);
+        // Find account by numero_compte
+        $compte = Compte::where('numero_compte', $numeroCompte)->first();
+
+        if (!$compte) {
+            return $this->errorResponse('COMPTE_NOT_FOUND', 'Le compte avec le numéro spécifié n\'existe pas', ['numeroCompte' => $numeroCompte], 404);
         }
 
         // Check if account is already closed
         if ($compte->statut === 'ferme') {
-            return $this->errorResponse('ACCOUNT_ALREADY_CLOSED', 'Le compte est déjà fermé', ['compteId' => $compte->id], 400);
+            return $this->errorResponse('ACCOUNT_ALREADY_CLOSED', 'Le compte est déjà fermé', ['numeroCompte' => $numeroCompte], 400);
+        }
+
+        // Check if account is active (only active accounts can be deleted)
+        if ($compte->statut !== 'actif') {
+            return $this->errorResponse('ACCOUNT_NOT_ACTIVE', 'Seuls les comptes actifs peuvent être supprimés', ['numeroCompte' => $numeroCompte], 400);
         }
 
         // Perform soft delete by updating status and setting closure date
@@ -808,15 +817,14 @@ class CompteController extends Controller
      *     )
      * )
      */
-    public function bloquer(Request $request, Compte $compte)
+    public function bloquer(Request $request, $numeroCompte)
     {
-        // Temporarily disable authentication for testing
-        $user = null; // Auth::user();
 
-        // Only admin can block accounts
-        $isAdmin = true; // Temporarily set to true for testing
-        if (!$isAdmin) {
-            return $this->errorResponse('FORBIDDEN', 'Seuls les administrateurs peuvent bloquer des comptes', [], 403);
+        // Find account by numero_compte
+        $compte = Compte::where('numero_compte', $numeroCompte)->first();
+
+        if (!$compte) {
+            return $this->errorResponse('COMPTE_NOT_FOUND', 'Le compte avec le numéro spécifié n\'existe pas', ['numeroCompte' => $numeroCompte], 404);
         }
 
         // Validate request data
@@ -832,11 +840,11 @@ class CompteController extends Controller
 
         // Check if account is a savings account and active
         if ($compte->type !== 'epargne') {
-            return $this->errorResponse('INVALID_ACCOUNT_TYPE', 'Seuls les comptes épargne peuvent être bloqués', ['compteId' => $compte->id], 400);
+            return $this->errorResponse('INVALID_ACCOUNT_TYPE', 'Seuls les comptes épargne peuvent être bloqués', ['numeroCompte' => $numeroCompte], 400);
         }
 
         if ($compte->statut !== 'actif') {
-            return $this->errorResponse('ACCOUNT_NOT_ACTIVE', 'Le compte doit être actif pour être bloqué', ['compteId' => $compte->id], 400);
+            return $this->errorResponse('ACCOUNT_NOT_ACTIVE', 'Le compte doit être actif pour être bloqué', ['numeroCompte' => $numeroCompte], 400);
         }
 
         // Calculate unlock date
@@ -861,6 +869,7 @@ class CompteController extends Controller
         // Format response data
         $responseData = [
             'id' => $compte->id,
+            'numeroCompte' => $compte->numero_compte,
             'statut' => $compte->statut,
             'motifBlocage' => $compte->motifBlocage,
             'dateBlocage' => $compte->dateBlocage?->toISOString(),
@@ -871,19 +880,99 @@ class CompteController extends Controller
     }
 
     /**
+     * @OA\Get(
+     *     path="/v1/comptes/archives",
+     *     summary="Lister les comptes archivés",
+     *     description="Récupère la liste des comptes épargne archivés depuis le cloud storage.",
+     *     operationId="getArchivedComptes",
+     *     tags={"Comptes"},
+     *     security={{"sanctum":{}}},
+     *     @OA\Parameter(
+     *         name="page",
+     *         in="query",
+     *         description="Numéro de page",
+     *         required=false,
+     *         @OA\Schema(type="integer", default=1)
+     *     ),
+     *     @OA\Parameter(
+     *         name="limit",
+     *         in="query",
+     *         description="Nombre d'éléments par page",
+     *         required=false,
+     *         @OA\Schema(type="integer", default=10, maximum=100)
+     *     ),
+     *     @OA\Response(
+     *         response=200,
+     *         description="Liste des comptes archivés récupérée avec succès",
+     *         @OA\JsonContent(
+     *             type="object",
+     *             @OA\Property(property="success", type="boolean", example=true),
+     *             @OA\Property(property="data", type="array", @OA\Items(type="object")),
+     *             @OA\Property(property="pagination", type="object"),
+     *             @OA\Property(property="timestamp", type="string", format="date-time"),
+     *             @OA\Property(property="path", type="string"),
+     *             @OA\Property(property="traceId", type="string")
+     *         )
+     *     ),
+     *     @OA\Response(
+     *         response=401,
+     *         description="Non autorisé",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=403,
+     *         description="Accès refusé - Seuls les administrateurs peuvent voir les archives",
+     *         @OA\JsonContent(type="object")
+     *     ),
+     *     @OA\Response(
+     *         response=429,
+     *         description="Trop de requêtes",
+     *         @OA\JsonContent(type="object")
+     *     )
+     * )
+     */
+    public function archives(Request $request)
+    {
+
+        // Get archived accounts from cloud storage
+        $cloudService = new CloudStorageService();
+        $archivedAccounts = $cloudService->getArchivedSavingsAccounts();
+
+        // Apply pagination
+        $perPage = min($request->get('limit', 10), 100);
+        $page = $request->get('page', 1);
+        $offset = ($page - 1) * $perPage;
+
+        $paginatedAccounts = array_slice($archivedAccounts, $offset, $perPage);
+        $totalItems = count($archivedAccounts);
+        $totalPages = ceil($totalItems / $perPage);
+
+        $paginationData = [
+            'currentPage' => (int) $page,
+            'totalPages' => $totalPages,
+            'totalItems' => $totalItems,
+            'itemsPerPage' => $perPage,
+            'hasNext' => $page < $totalPages,
+            'hasPrevious' => $page > 1,
+        ];
+
+        return $this->successResponse($paginatedAccounts, null, 200, $paginationData);
+    }
+
+    /**
      * @OA\Post(
-     *     path="/v1/comptes/{compteId}/debloquer",
+     *     path="/v1/comptes/{numeroCompte}/debloquer",
      *     summary="Débloquer un compte épargne",
      *     description="Débloque un compte épargne bloqué avec un motif de déblocage.",
      *     operationId="debloquerCompte",
      *     tags={"Comptes"},
      *     security={{"sanctum":{}}},
      *     @OA\Parameter(
-     *         name="compteId",
+     *         name="numeroCompte",
      *         in="path",
-     *         description="ID du compte à débloquer",
+     *         description="Numéro du compte à débloquer",
      *         required=true,
-     *         @OA\Schema(type="integer")
+     *         @OA\Schema(type="string")
      *     ),
      *     @OA\RequestBody(
      *         required=true,
@@ -900,7 +989,7 @@ class CompteController extends Controller
      *             @OA\Property(property="success", type="boolean", example=true),
      *             @OA\Property(property="message", type="string", example="Compte débloqué avec succès"),
      *             @OA\Property(property="data", type="object",
-     *                 @OA\Property(property="id", type="string", format="uuid", example="550e8400-e29b-41d4-a716-446655440000"),
+     *                 @OA\Property(property="numeroCompte", type="string", example="C00123456"),
      *                 @OA\Property(property="statut", type="string", example="actif"),
      *                 @OA\Property(property="dateDeblocage", type="string", format="date-time")
      *             ),
@@ -936,15 +1025,14 @@ class CompteController extends Controller
      *     )
      * )
      */
-    public function debloquer(Request $request, Compte $compte)
+    public function debloquer(Request $request, $numeroCompte)
     {
-        // Temporarily disable authentication for testing
-        $user = null; // Auth::user();
 
-        // Only admin can unblock accounts
-        $isAdmin = true; // Temporarily set to true for testing
-        if (!$isAdmin) {
-            return $this->errorResponse('FORBIDDEN', 'Seuls les administrateurs peuvent débloquer des comptes', [], 403);
+        // Find account by numero_compte
+        $compte = Compte::where('numero_compte', $numeroCompte)->first();
+
+        if (!$compte) {
+            return $this->errorResponse('COMPTE_NOT_FOUND', 'Le compte avec le numéro spécifié n\'existe pas', ['numeroCompte' => $numeroCompte], 404);
         }
 
         // Validate request data
@@ -958,7 +1046,7 @@ class CompteController extends Controller
 
         // Check if account is blocked
         if ($compte->statut !== 'bloque') {
-            return $this->errorResponse('ACCOUNT_NOT_BLOCKED', 'Le compte n\'est pas bloqué', ['compteId' => $compte->id], 400);
+            return $this->errorResponse('ACCOUNT_NOT_BLOCKED', 'Le compte n\'est pas bloqué', ['numeroCompte' => $numeroCompte], 400);
         }
 
         // Update account status and clear blocking information
@@ -972,6 +1060,7 @@ class CompteController extends Controller
         // Format response data
         $responseData = [
             'id' => $compte->id,
+            'numeroCompte' => $compte->numero_compte,
             'statut' => $compte->statut,
             'dateDeblocage' => now()->toISOString(),
         ];

@@ -16,32 +16,7 @@ class ApiUserRateLimit
      */
     public function handle(Request $request, Closure $next): Response
     {
-        $user = $request->user();
-        if (!$user) {
-            return $next($request);
-        }
-
-        $key = 'user:' . $user->id;
-
-        // 10 requests per day per user
-        if (RateLimiter::tooManyAttempts($key, 10)) {
-            return response()->json([
-                'success' => false,
-                'error' => [
-                    'code' => 'USER_RATE_LIMIT_EXCEEDED',
-                    'message' => 'Limite de requêtes utilisateur dépassée. Veuillez réessayer demain.',
-                    'details' => [
-                        'retry_after' => RateLimiter::availableIn($key)
-                    ],
-                    'timestamp' => now()->toISOString(),
-                    'path' => $request->path(),
-                    'traceId' => uniqid()
-                ]
-            ], 429);
-        }
-
-        RateLimiter::hit($key);
-
+        // Since authentication is removed, just pass through
         return $next($request);
     }
 }

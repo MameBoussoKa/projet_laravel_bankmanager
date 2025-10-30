@@ -2,10 +2,14 @@
     "openapi": "3.0.0",
     "info": {
         "title": "Bank Manager API",
-        "description": "API for managing bank accounts",
+        "description": "API for managing bank accounts without authentication",
         "version": "1.0.0"
     },
     "servers": [
+        {
+            "url": "http://127.0.0.1:8000/api",
+            "description": "Local development server"
+        },
         {
             "url": "https://projet-laravel-bankmanager.onrender.com/api",
             "description": "Production API server"
@@ -359,22 +363,23 @@
                 ]
             }
         },
-        "/v1/comptes/{compteId}": {
+        "/v1/comptes/{numeroCompte}": {
             "get": {
                 "tags": [
                     "Comptes"
                 ],
                 "summary": "Récupérer un compte spécifique",
-                "description": "Récupère les détails d'un compte spécifique par son ID. Recherche d'abord en local, puis dans le cloud si nécessaire.",
+                "description": "Récupère les détails d'un compte spécifique par son numéro de compte. Recherche d'abord en local, puis dans le cloud si nécessaire.",
                 "operationId": "getCompte",
                 "parameters": [
                     {
-                        "name": "compteId",
+                        "name": "numeroCompte",
                         "in": "path",
-                        "description": "ID du compte à récupérer",
+                        "description": "Numéro du compte à récupérer",
                         "required": true,
                         "schema": {
-                            "type": "integer"
+                            "type": "string",
+                            "example": "C00123456"
                         }
                     }
                 ],
@@ -436,16 +441,26 @@
                                                 },
                                                 "message": {
                                                     "type": "string",
-                                                    "example": "Le compte avec l'ID spécifié n'existe pas"
+                                                    "example": "Le compte avec le numéro spécifié n'existe pas"
                                                 },
                                                 "details": {
                                                     "properties": {
-                                                        "compteId": {
+                                                        "numeroCompte": {
                                                             "type": "string",
-                                                            "format": "uuid"
+                                                            "example": "C00123456"
                                                         }
                                                     },
                                                     "type": "object"
+                                                },
+                                                "timestamp": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "path": {
+                                                    "type": "string"
+                                                },
+                                                "traceId": {
+                                                    "type": "string"
                                                 }
                                             },
                                             "type": "object"
@@ -482,7 +497,9 @@
                         "sanctum": []
                     }
                 ]
-            },
+            }
+        },
+        "/v1/comptes/{compteId}": {
             "delete": {
                 "tags": [
                     "Comptes"
@@ -597,11 +614,7 @@
                         }
                     }
                 },
-                "security": [
-                    {
-                        "sanctum": []
-                    }
-                ]
+                "security": []
             },
             "patch": {
                 "tags": [
@@ -744,11 +757,7 @@
                         }
                     }
                 },
-                "security": [
-                    {
-                        "sanctum": []
-                    }
-                ]
+                "security": []
             }
         },
         "/v1/comptes/{compteId}/bloquer": {
@@ -920,7 +929,112 @@
                 ]
             }
         },
-        "/v1/comptes/{compteId}/debloquer": {
+        "/v1/comptes/archives": {
+            "get": {
+                "tags": [
+                    "Comptes"
+                ],
+                "summary": "Lister les comptes archivés",
+                "description": "Récupère la liste des comptes épargne archivés depuis le cloud storage.",
+                "operationId": "getArchivedComptes",
+                "parameters": [
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "description": "Numéro de page",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 1
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "description": "Nombre d'éléments par page",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 10,
+                            "maximum": 100
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Liste des comptes archivés récupérée avec succès",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "properties": {
+                                        "success": {
+                                            "type": "boolean",
+                                            "example": true
+                                        },
+                                        "data": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "object"
+                                            }
+                                        },
+                                        "pagination": {
+                                            "type": "object"
+                                        },
+                                        "timestamp": {
+                                            "type": "string",
+                                            "format": "date-time"
+                                        },
+                                        "path": {
+                                            "type": "string"
+                                        },
+                                        "traceId": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Non autorisé",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Accès refusé - Seuls les administrateurs peuvent voir les archives",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Trop de requêtes",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                },
+                "security": [
+                    {
+                        "sanctum": []
+                    }
+                ]
+            }
+        },
+        "/v1/comptes/{numeroCompte}/debloquer": {
             "post": {
                 "tags": [
                     "Comptes"
@@ -930,12 +1044,12 @@
                 "operationId": "debloquerCompte",
                 "parameters": [
                     {
-                        "name": "compteId",
+                        "name": "numeroCompte",
                         "in": "path",
-                        "description": "ID du compte à débloquer",
+                        "description": "Numéro du compte à débloquer",
                         "required": true,
                         "schema": {
-                            "type": "integer"
+                            "type": "string"
                         }
                     }
                 ],
@@ -976,10 +1090,9 @@
                                         },
                                         "data": {
                                             "properties": {
-                                                "id": {
+                                                "numeroCompte": {
                                                     "type": "string",
-                                                    "format": "uuid",
-                                                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                                                    "example": "C00123456"
                                                 },
                                                 "statut": {
                                                     "type": "string",

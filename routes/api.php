@@ -3,7 +3,6 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\CompteController;
-use App\Http\Controllers\Api\TransactionController;
 use App\Http\Controllers\Api\AdminController;
 use L5Swagger\L5SwaggerServiceProvider;
 
@@ -18,15 +17,19 @@ use L5Swagger\L5SwaggerServiceProvider;
 |
 */
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-});
 
 Route::prefix('v1')->middleware(['api.rate.limit', 'api.user.rate.limit', 'api.response.format', 'rating'])->group(function () {
-    
-    Route::apiResource('comptes', CompteController::class)->middleware(['logging']);
-    Route::post('comptes/{compte}/bloquer', [CompteController::class, 'bloquer'])->middleware(['logging']);
-    Route::post('comptes/{compte}/debloquer', [CompteController::class, 'debloquer'])->middleware(['logging']);
-    Route::apiResource('transactions', TransactionController::class);
-    Route::apiResource('admins', AdminController::class);
+
+    Route::get('comptes', [CompteController::class, 'index'])->middleware(['logging']);
+    Route::post('comptes', [CompteController::class, 'store'])->middleware(['logging']);
+    Route::get('comptes/{numeroCompte}', [CompteController::class, 'show'])->middleware(['logging']);
+    Route::patch('comptes/{numeroCompte}', [CompteController::class, 'update'])->middleware(['logging']);
+    Route::delete('comptes/{numeroCompte}', [CompteController::class, 'destroy'])->middleware(['logging']);
+
+    // Admin only endpoints
+    Route::post('comptes/{numeroCompte}/bloquer', [CompteController::class, 'bloquer'])->middleware(['logging']);
+    Route::post('comptes/{numeroCompte}/debloquer', [CompteController::class, 'debloquer'])->middleware(['logging']);
+    Route::get('comptes/archives', [CompteController::class, 'archives'])->middleware(['logging']);
+
+    Route::apiResource('admins', AdminController::class)->middleware(['logging']);
 });
